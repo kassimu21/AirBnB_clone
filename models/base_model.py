@@ -1,84 +1,112 @@
 #!/usr/bin/python3
-"""This is the base model class for AirBnB"""
-import uuid
-import models
-from datetime import datetime
-from sqlalchemy import Column, DateTime, String, Integer, Table, ForeignKey
-from sqlalchemy.ext.declarative import declarative_base
+"""
+This File defines the BaseModel class that will
+serve as the base class for all our models."""
 
-Base = declarative_base()
+from uuid import uuid4
+from datetime import datetime
+import models
 
 
 class BaseModel:
-    """This class will defines all common attributes/methods
-    for other classes
-    """
-
-    id = Column(String(60), nullable=False, primary_key=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    """Base class for all our classes"""
 
     def __init__(self, *args, **kwargs):
-        """Instantiation of base model class
-        Args:
-            args: it won't be used
-            kwargs: arguments for the constructor of the BaseModel
-        Attributes:
-            id: unique id generated
-            created_at: creation date
-            updated_at: updated date
-        """
-        if kwargs:
-            for key, value in kwargs.items():
-                if key == "created_at" or key == "updated_at":
-                    value = datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%f")
-                if key != "__class__":
-                    setattr(self, key, value)
-            # TODO: wtf? more error checking?
-            if "id" not in kwargs:
-                self.id = str(uuid.uuid4())
-            if "created_at" not in kwargs:
-                self.created_at = datetime.now()
-            if "updated_at" not in kwargs:
-                self.updated_at = datetime.now()
+        """constructor it either deserialize
+        a serialized class or intialize a new"""
 
-        else:
-            self.id = str(uuid.uuid4())
-            self.created_at = self.updated_at = datetime.now()
+        # initialize if nothing is passed
+        if kwargs == {}:
+            self.id = str(uuid4())
+            self.created_at = datetime.utcnow()
+            self.updated_at = datetime.utcnow()
+            models.storage.new(self)
+            return
+
+        # using key words (deserialize)
+        for key, val in kwargs.items():
+            if key == '__class__':
+                continue
+            self.__dict__[key] = val
+        if 'created_at' in kwargs:
+            self.created_at = datetime.strptime(
+                    kwargs['created_at'],
+                    '%Y-%m-%dT%H:%M:%S.%f')
+        if 'updated_at' in kwargs:
+            self.updated_at = datetime.strptime(
+                    kwargs['updated_at'],
+                    '%Y-%m-%dT%H:%M:%S.%f')
 
     def __str__(self):
-        """returns a string
-        Return:
-            returns a string of class name, id, and dictionary
-        """
-        return "[{}] ({}) {}".format(
-            type(self).__name__, self.id, self.to_dict())
-
-    def __repr__(self):
-        """return a string representaion
-        """
-        return self.__str__()
+        """overide str representation of self"""
+        fmt = "[{}] ({}) {}"
+        return fmt.format(
+                type(self).__name__,
+                self.id,
+                self.__dict__)
 
     def save(self):
-        """updates the public instance attribute updated_at to current
-        """
-        self.updated_at = datetime.now()
-        models.storage.new(self)
+        """updates last updated variable"""
+        self.updated_at = datetime.utcnow()
         models.storage.save()
 
     def to_dict(self):
-        """creates dictionary of the class  and returns
-        Return:
-            returns a dictionary of all the key values in __dict__
-        """
-        my_dict = dict(self.__dict__)
-        my_dict["__class__"] = str(type(self).__name__)
-        my_dict["created_at"] = self.created_at.isoformat()
-        my_dict["updated_at"] = self.updated_at.isoformat()
-        if "_sa_instance_state" in my_dict:
-            del my_dict["_sa_instance_state"]
-        return my_dict
+        """Returns a dictionary representation of self"""
+        temp = {**self.__dict__}
+        temp['__class__'] = type(self).__name__
+        temp['created_at'] = self.created_at.strftime('%Y-%m-%dT%H:%M:%S.%f')
+        temp['updated_at'] = self.updated_at.strftime('%Y-%m-%dT%H:%M:%S.%f')
+        return temp
 
-    def delete(self):
-        """deletes current instance from the storage (models.storage)"""
-        models.storage.delete(self)
+    @classmethod
+    def all(cls):
+        """Retrieve all current instances of cls"""
+        return models.storage.find_all(cls.__name__)
+
+    @classmethod
+    def count(cls):
+        """Get the number of all current instances of cls"""
+        return len(models.storage.find_all(cls.__name__))
+
+    @classmethod
+    def create(cls, *args, **kwargs):
+        """Creates an Instance"""
+        new = cls(*args, **kwargs)
+        return new.id
+
+    @classmethod
+    def show(cls, instance_id):
+        """Retrieve an instance"""
+        return models.storage.find_by_id(
+            cls.__name__,
+            instance_id
+        )
+
+    @classmethod
+    def destroy(cls, instance_id):
+        """Deletes an instance"""
+        return models.storage.delete_by_id(
+            cls.__name__,
+            instance_id
+        )
+
+    @classmethod
+    def update(cls, instance_id, *args):
+        """Updates an instance
+        if args has one elem and its a dict:
+        it updates by key value
+        else:
+        updates by first being key and second being value"""
+        if not len(args):
+            print("** attribute name missing **")
+            return
+        if len(args) == 1 and isinstance(args[0], dict):
+            args = args[0].items()
+        else:
+            args = [args[:2]]
+        for arg in args:
+            models.storage.update_one(
+                cls.__name__,
+                instance_id,
+                *arg
+            )
